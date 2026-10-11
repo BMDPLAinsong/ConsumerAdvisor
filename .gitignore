@@ -1,0 +1,27 @@
+# ===== 构建产物 =====
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+
+# ===== Visual Studio / IDE =====
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.idea/
+.vscode/
+
+# ===== 应用运行时数据（用户设置与冷静清单，不入库） =====
+Data/
+
+# ===== 操作系统 =====
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ===== 日志 =====
+*.log
+logs/

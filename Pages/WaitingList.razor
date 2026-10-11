@@ -1,0 +1,942 @@
+@* 路由定义，将页面映射到 /waiting-list 地址 *@
+@page "/waiting-list"
+@* 注入等待清单服务，用于管理商品的增删改查 *@
+@inject WaitingListService ListService
+@* 注入用户设置服务，用于获取用户偏好配置 *@
+@inject UserSettingsService SettingsService
+@* 注入日志服务，用于记录错误和调试信息 *@
+@inject ILogger<WaitingList> Logger
+
+@* 页面根容器，应用整体样式 *@
+<div class="waiting-list-page">
+    @* 居中内容容器，限制最大宽度 *@
+    <div class="container">
+        @* 页面头部区域，包含标题和导航按钮 *@
+        <div class="page-header">
+            @* 标题和副标题区域 *@
+            <div>
+                @* 页面主标题，带表情符号增强视觉效果 *@
+                <h1>🧊 冷静清单</h1>
+                @* 副标题说明页面用途 *@
+                <p class="subtitle">给冲动消费一个冷静的机会</p>
+            </div>
+            @* 头部导航操作按钮组 *@
+            <div class="header-actions">
+                @* 跳转到主页的链接按钮 *@
+                <a href="/" class="settings-btn">🏠 主页</a>
+                @* 跳转到计算器页面的链接按钮 *@
+                <a href="/calculator" class="settings-btn">💰 计算器</a>
+                @* 跳转到设置页面的链接按钮 *@
+                <a href="/settings" class="settings-btn">⚙️ 设置</a>
+            </div>
+        </div>
+
+        @* 添加新商品到冷静清单的表单卡片 *@
+        <div class="card add-card">
+            @* 表单标题 *@
+            <h3>📝 加入冷静清单</h3>
+            @* 添加表单容器，采用垂直弹性布局 *@
+            <div class="add-form">
+                @* 商品名称和价格的输入行 *@
+                <div class="form-row">
+                    @* 商品名称输入框，双向绑定到 newProduct 变量 *@
+                    <input @bind="newProduct" placeholder="商品名称" class="input-product" />
+                    @* 商品价格输入框（数字类型，精度到小数点后两位），双向绑定到 newPrice 变量 *@
+                    <input @bind="newPrice" type="number" step="0.01" placeholder="价格（可选）" class="input-price" />
+                </div>
+                @* 购买原因文本域，双向绑定到 newReason 变量 *@
+                <textarea @bind="newReason" placeholder="购买原因" rows="2" class="input-reason"></textarea>
+                @* 提交按钮，点击触发 AddToWaitingList 方法，添加过程中禁用按钮 *@
+                <button @onclick="AddToWaitingList" disabled="@isAdding" class="btn-add">
+                    @* 根据 isAdding 状态显示不同文案 *@
+                    @(isAdding ? "添加中..." : "✓ 加入冷静期")
+                </button>
+            </div>
+        </div>
+
+        @* 待冷静商品列表区域 *@
+        <div class="section">
+            @* 区域标题，显示待冷静商品数量 *@
+            <h2 class="section-title">⏳ 待冷静 (@pendingItems.Count)</h2>
+
+            @* 判断是否没有待冷静商品 *@
+            @if (!pendingItems.Any())
+            {
+                @* 空状态提示区域 *@
+                <div class="empty-state">
+                    @* 空状态图标 *@
+                    <span class="empty-icon">✨</span>
+                    @* 空状态主文案 *@
+                    <p>暂无待冷静商品</p>
+                    @* 空状态提示文案 *@
+                    <p class="empty-hint">添加商品开始24小时冷静期</p>
+                </div>
+            }
+            else
+            {
+                @* 商品网格布局容器，自适应列数 *@
+                <div class="items-grid">
+                    @* 遍历所有待冷静商品 *@
+                    @foreach (var item in pendingItems)
+                    {
+                        @* 单个商品卡片，若预算分析尚未完成则添加 loading 类 *@
+                        <div class="waiting-card @(item.BudgetAnalysis == null ? "loading" : "")">
+                            @* 卡片头部，包含商品名称和倒计时徽章 *@
+                            <div class="card-header">
+                                @* 商品名称 *@
+                                <h3>@item.Product</h3>
+                                @* 倒计时徽章，根据剩余时间动态设置样式 *@
+                                <span class="countdown-badge" style="@GetCountdownStyle(item.ExpiresAt)">
+                                    @* 显示剩余时间文本 *@
+                                    @GetRemainingTime(item.ExpiresAt)
+                                </span>
+                            </div>
+
+                            @* 卡片主体，显示商品详情和分析结果 *@
+                            <div class="card-body">
+                                @* 购买原因文本 *@
+                                <div class="reason-text">💭 @item.Reason</div>
+
+                                @* 判断商品是否有价格信息 *@
+                                @if (item.ProductPrice.HasValue)
+                                {
+                                    @* 显示价格标签，格式化为两位小数 *@
+                                    <div class="price-tag">💰 ¥@item.ProductPrice.Value.ToString("F2")</div>
+                                }
+
+                                @* 判断预算分析是否已完成 *@
+                                @if (item.BudgetAnalysis != null)
+                                {
+                                    @* 预算分析模块 *@
+                                    <div class="analysis-section">
+                                        @* 预算分析标题 *@
+                                        <div class="analysis-header">📊 预算分析</div>
+                                        @* 预算分析网格布局，三列显示 *@
+                                        <div class="analysis-grid">
+                                            @* 收入占比分析项 *@
+                                            <div class="analysis-item">
+                                                @* 标签文字 *@
+                                                <span class="label">收入占比</span>
+                                                @* 占比数值，超过25%时显示警告样式 *@
+                                                <span class="value @(item.BudgetAnalysis.IncomePercentage > 25 ? "warning" : "")">
+                                                    @item.BudgetAnalysis.IncomePercentage%
+                                                </span>
+                                            </div>
+                                            @* 预算评级分析项 *@
+                                            <div class="analysis-item">
+                                                @* 标签文字 *@
+                                                <span class="label">预算评级</span>
+                                                @* 评级徽章，使用动态CSS类名显示不同颜色 *@
+                                                <span class="badge @item.BudgetAnalysis.BudgetRatingClass">
+                                                    @item.BudgetAnalysis.BudgetRating
+                                                </span>
+                                            </div>
+                                            @* 需求匹配分析项 *@
+                                            <div class="analysis-item">
+                                                @* 标签文字 *@
+                                                <span class="label">需求匹配</span>
+                                                @* 匹配度数值，低于阈值时显示警告样式 *@
+                                                <span class="value @(IsBelowThreshold(item) ? "warning" : "")">
+                                                    @GetMatchScoreDisplay(item)
+                                                </span>
+                                            </div>
+                                        </div>
+                                        @* AI 分析推理说明文本 *@
+                                        <div class="reasoning">@item.BudgetAnalysis.Reasoning</div>
+                                    </div>
+
+                                    @* 替代方案模块 *@
+                                    @if (item.Alternatives?.Any() == true)
+                                    {
+                                        @* 替代方案区域容器 *@
+                                        <div class="alternatives-section">
+                                            @* 替代方案标题 *@
+                                            <div class="alternatives-header">💡 替代方案</div>
+                                            @* 遍历最多3个替代方案 *@
+                                            @foreach (var alt in item.Alternatives.Take(3))
+                                            {
+                                                @* 单个替代方案条目 *@
+                                                <div class="alternative-item">
+                                                    @* 替代方案基本信息 *@
+                                                    <div class="alt-info">
+                                                        @* 替代方案名称 *@
+                                                        <span class="alt-name">@alt.Name</span>
+                                                        @* 若有价格则显示价格 *@
+                                                        @if (alt.Price.HasValue)
+                                                        {
+                                                            <span class="alt-price">¥@alt.Price.Value.ToString("F0")</span>
+                                                        }
+                                                        @* 替代方案来源 *@
+                                                        <span class="alt-source">@alt.Source</span>
+                                                    </div>
+                                                    @* 替代方案优点列表 *@
+                                                    <div class="alt-pros">
+                                                        @* 遍历最多2个优点 *@
+                                                        @foreach (var pro in alt.Pros.Take(2))
+                                                        {
+                                                            @* 单个优点标签 *@
+                                                            <span class="tag tag-pro">+@pro</span>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    @* AI 分析进行中提示 *@
+                                    <div class="analyzing">
+                                        @* 加载动画旋转器 *@
+                                        <span class="spinner"></span>
+                                        @* 分析中文案 *@
+                                        <span>AI 分析中...</span>
+                                    </div>
+                                }
+                            </div>
+
+                            @* 卡片底部操作区 *@
+                            <div class="card-actions">
+                                @* 若匹配度低于阈值且分析已完成，显示警告 *@
+                                @if (IsBelowThreshold(item) && item.BudgetAnalysis != null)
+                                {
+                                    @* 匹配度警告提示条 *@
+                                    <div class="match-warning">
+                                        @* 警告图标 *@
+                                        <span class="warning-icon">⚠️</span>
+                                        @* 警告文字 *@
+                                        <span class="warning-text">匹配度不足</span>
+                                        @* 匹配度详细数值 *@
+                                        <span class="warning-detail">@GetMatchScoreDisplay(item)</span>
+                                    </div>
+                                }
+                                @* 按钮组容器 *@
+                                <div class="btn-group">
+                                    @* 确定购买按钮，点击完成购买 *@
+                                    <button @onclick="() => CompletePurchase(item.Id)" class="btn-complete">
+                                        ✅ 确定购买
+                                    </button>
+                                    @* 放弃按钮，点击删除该商品 *@
+                                    <button @onclick="() => RemoveItem(item.Id)" class="btn-remove">
+                                        ❌ 放弃
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        @* 已过期商品列表区域 *@
+        @if (expiredItems.Any())
+        {
+            @* 过期商品区域 *@
+            <div class="section">
+                @* 过期区域标题，显示过期商品数量 *@
+                <h2 class="section-title expired">⏰ 已过期 (@expiredItems.Count)</h2>
+                @* 过期商品网格布局 *@
+                <div class="items-grid">
+                    @* 遍历所有过期商品 *@
+                    @foreach (var item in expiredItems)
+                    {
+                        @* 过期商品卡片，应用 expired 样式 *@
+                        <div class="waiting-card expired">
+                            @* 卡片头部 *@
+                            <div class="card-header">
+                                @* 商品名称 *@
+                                <h3>@item.Product</h3>
+                                @* 已过期状态徽章 *@
+                                <span class="badge expired-badge">已过期</span>
+                            </div>
+                            @* 卡片主体 *@
+                            <div class="card-body">
+                                @* 购买原因 *@
+                                <div class="reason-text">@item.Reason</div>
+                                @* 若预算分析存在则显示最终评级 *@
+                                @if (item.BudgetAnalysis != null)
+                                {
+                                    @* 最终分析结果 *@
+                                    <div class="final-analysis">
+                                        @* 最终评级徽章 *@
+                                        <span class="final-score @item.BudgetAnalysis.BudgetRatingClass">
+                                            @item.BudgetAnalysis.BudgetRating
+                                        </span>
+                                    </div>
+                                }
+                            </div>
+                            @* 卡片操作区 *@
+                            <div class="card-actions">
+                                @* 仍然购买按钮 *@
+                                <button @onclick="() => CompletePurchase(item.Id)" class="btn-complete">
+                                    ✅ 仍然购买
+                                </button>
+                                @* 删除按钮 *@
+                                <button @onclick="() => RemoveItem(item.Id)" class="btn-remove">
+                                    🗑️ 删除
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@* CSS 样式定义区域 *@
+<style>
+    .waiting-list-page {
+        min-height: 100vh;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #5a3f99 100%);
+        padding: 40px 20px;
+        position: relative;
+    }
+    .waiting-list-page::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-image: 
+            radial-gradient(circle at 20% 80%, rgba(255, 255, 255, 0.08) 0%, transparent 50%),
+            radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 50%);
+        pointer-events: none;
+        z-index: 0;
+    }
+    .container {
+        max-width: 1000px;
+        margin: 0 auto;
+        position: relative;
+        z-index: 1;
+    }
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 32px;
+    }
+    .page-header h1 {
+        color: white;
+        font-size: 32px;
+        margin-bottom: 4px;
+    }
+    .subtitle {
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 14px;
+    }
+    .header-actions {
+        display: flex;
+        gap: 12px;
+    }
+    .settings-btn {
+        background: rgba(255, 255, 255, 0.15);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 12px;
+        text-decoration: none;
+        font-size: 14px;
+        transition: all 0.2s ease;
+    }
+    .settings-btn:hover {
+        background: rgba(255, 255, 255, 0.25);
+    }
+    .card {
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.04), 0 10px 20px rgba(0, 0, 0, 0.08);
+        padding: 28px;
+        margin-bottom: 24px;
+    }
+    .add-card {
+        border: 2px dashed rgba(102, 126, 234, 0.3);
+        background: rgba(255, 255, 255, 0.95);
+    }
+    .add-card h3 {
+        color: #2d3748;
+        margin-bottom: 20px;
+        font-size: 18px;
+    }
+    .add-form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+    .form-row {
+        display: flex;
+        gap: 12px;
+    }
+    .input-product {
+        flex: 2;
+        padding: 14px 16px;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 15px;
+        transition: all 0.2s ease;
+    }
+    .input-price {
+        flex: 1;
+        padding: 14px 16px;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 15px;
+        transition: all 0.2s ease;
+    }
+    .input-product:focus, .input-price:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    .input-reason {
+        padding: 14px 16px;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 15px;
+        resize: vertical;
+        transition: all 0.2s ease;
+    }
+    .input-reason:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    .btn-add {
+        padding: 14px 24px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .btn-add:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(102, 126, 234, 0.3);
+    }
+    .btn-add:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+    .section {
+        margin-bottom: 32px;
+    }
+    .section-title {
+        color: white;
+        font-size: 20px;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .section-title.expired {
+        opacity: 0.7;
+    }
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        color: white;
+    }
+    .empty-icon {
+        font-size: 48px;
+        display: block;
+        margin-bottom: 16px;
+    }
+    .empty-hint {
+        font-size: 14px;
+        opacity: 0.7;
+        margin-top: 8px;
+    }
+    .items-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+        gap: 20px;
+    }
+    .waiting-card {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.04), 0 10px 20px rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+        transition: transform 0.2s ease;
+    }
+    .waiting-card:hover {
+        transform: translateY(-2px);
+    }
+    .waiting-card.loading {
+        opacity: 0.8;
+    }
+    .waiting-card.expired {
+        opacity: 0.7;
+    }
+    .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px 20px 12px;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .card-header h3 {
+        color: #2d3748;
+        font-size: 18px;
+        margin: 0;
+    }
+    .countdown-badge {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    .countdown-badge.urgent {
+        background: #fed7d7;
+        color: #c53030;
+    }
+    .countdown-badge.warning {
+        background: #feebc8;
+        color: #c05621;
+    }
+    .countdown-badge.normal {
+        background: #c6f6d5;
+        color: #276749;
+    }
+    .expired-badge {
+        background: #e2e8f0;
+        color: #718096;
+    }
+    .card-body {
+        padding: 16px 20px;
+    }
+    .reason-text {
+        color: #4a5568;
+        font-size: 14px;
+        margin-bottom: 12px;
+    }
+    .price-tag {
+        display: inline-block;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 12px;
+    }
+    .analysis-section {
+        background: #f7fafc;
+        border-radius: 12px;
+        padding: 16px;
+        margin-top: 12px;
+    }
+    .analysis-header {
+        font-size: 13px;
+        font-weight: 600;
+        color: #667eea;
+        margin-bottom: 12px;
+    }
+    .analysis-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+    .analysis-item {
+        text-align: center;
+    }
+    .analysis-item .label {
+        display: block;
+        font-size: 11px;
+        color: #a0aec0;
+        margin-bottom: 4px;
+    }
+    .analysis-item .value {
+        font-size: 16px;
+        font-weight: 600;
+        color: #2d3748;
+    }
+    .analysis-item .value.warning {
+        color: #e53e3e;
+    }
+    .badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .rating-easy { background: #c6f6d5; color: #276749; }
+    .rating-moderate { background: #feebc8; color: #c05621; }
+    .rating-careful { background: #fed7d7; color: #c53030; }
+    .rating-over { background: #feb2b2; color: #9b2c2c; }
+    .reasoning {
+        font-size: 13px;
+        color: #718096;
+        line-height: 1.5;
+    }
+    .alternatives-section {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid #e2e8f0;
+    }
+    .alternatives-header {
+        font-size: 13px;
+        font-weight: 600;
+        color: #667eea;
+        margin-bottom: 12px;
+    }
+    .alternative-item {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 12px;
+        margin-bottom: 8px;
+    }
+    .alt-info {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+        flex-wrap: wrap;
+    }
+    .alt-name {
+        font-weight: 600;
+        color: #2d3748;
+    }
+    .alt-price {
+        color: #667eea;
+        font-weight: 600;
+    }
+    .alt-source {
+        font-size: 11px;
+        color: #a0aec0;
+        background: #edf2f7;
+        padding: 2px 8px;
+        border-radius: 10px;
+    }
+    .alt-pros {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+    .tag {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 10px;
+    }
+    .tag-pro {
+        background: #c6f6d5;
+        color: #276749;
+    }
+    .analyzing {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 20px;
+        color: #718096;
+    }
+    .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid #e2e8f0;
+        border-top-color: #667eea;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    .card-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 20px;
+        background: #f7fafc;
+        border-top: 1px solid #e2e8f0;
+    }
+    .btn-group {
+        display: flex;
+        gap: 12px;
+    }
+    .btn-complete {
+        flex: 1;
+        padding: 10px 16px;
+        background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .btn-complete:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(72, 187, 120, 0.3);
+    }
+    .match-warning {
+        padding: 8px 12px;
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        color: #92400e;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        border: 1px solid #fcd34d;
+    }
+    .match-warning .warning-icon {
+        font-size: 16px;
+    }
+    .match-warning .warning-text {
+        font-weight: 600;
+    }
+    .match-warning .warning-detail {
+        font-size: 12px;
+        opacity: 0.85;
+        font-weight: 400;
+    }
+    .btn-remove {
+        flex: 1;
+        padding: 10px 16px;
+        background: white;
+        color: #718096;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .btn-remove:hover {
+        background: #fff5f5;
+        color: #c53030;
+        border-color: #feb2b2;
+    }
+    .final-analysis {
+        margin-top: 12px;
+    }
+    .final-score {
+        display: inline-block;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 14px;
+        font-weight: 600;
+    }
+    @@media (max-width: 600px) {
+        .items-grid {
+            grid-template-columns: 1fr;
+        }
+        .form-row {
+            flex-direction: column;
+        }
+        .analysis-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+@* C# 代码逻辑区域 *@
+@code {
+    // 待处理（冷静期中）的商品列表
+    private List<WaitingListItem> pendingItems = new();
+    // 已过期（冷静期结束）的商品列表
+    private List<WaitingListItem> expiredItems = new();
+    // 新商品名称输入值
+    private string newProduct = "";
+    // 新商品价格输入值（字符串类型，用于解析）
+    private string newPrice = "";
+    // 新商品购买原因输入值
+    private string newReason = "";
+    // 添加操作是否正在进行中，用于禁用按钮防止重复提交
+    private bool isAdding = false;
+    // 定时刷新计时器，用于每分钟更新倒计时
+    private Timer? refreshTimer;
+    // 当前用户设置对象
+    private UserSettings? userSettings;
+
+    // 组件初始化异步方法，加载用户设置和数据，订阅事件，启动定时器
+    protected override async Task OnInitializedAsync()
+    {
+        // 从设置服务异步获取用户设置
+        userSettings = await SettingsService.GetSettingsAsync();
+        // 异步加载所有清单数据
+        await LoadDataAsync();
+        
+        // 订阅数据变更事件（AI分析完成时触发）
+        ListService.DataChanged += OnDataChanged;
+        
+        // 创建定时器，每分钟触发一次，检查过期商品并刷新数据
+        refreshTimer = new Timer(async _ =>
+        {
+            // 切换到 Blazor 同步上下文执行UI更新操作
+            await InvokeAsync(async () =>
+            {
+                // 检查并更新已过期的商品状态
+                await ListService.CheckAndUpdateExpiredAsync();
+                // 重新加载数据以更新UI
+                await LoadDataAsync();
+            });
+        }, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+    }
+
+    // 数据变更事件处理方法，当AI分析完成时自动刷新数据
+    private void OnDataChanged()
+    {
+        // 切换到同步上下文并异步加载数据
+        InvokeAsync(async () =>
+        {
+            // 异步重新加载清单数据
+            await LoadDataAsync();
+        });
+    }
+
+    // 异步加载数据方法，从服务获取所有商品并分类
+    private async Task LoadDataAsync()
+    {
+        // 从服务获取所有等待清单商品
+        var allItems = await ListService.GetAllAsync();
+        // 筛选出状态为 Pending 的商品作为待冷静列表
+        pendingItems = allItems.Where(x => x.Status == WaitingListStatus.Pending).ToList();
+        // 筛选出状态为 Expired 的商品作为已过期列表
+        expiredItems = allItems.Where(x => x.Status == WaitingListStatus.Expired).ToList();
+        // 通知 Blazor 组件状态已变更，触发重新渲染
+        StateHasChanged();
+    }
+
+    // 添加商品到冷静清单的异步方法
+    private async Task AddToWaitingList()
+    {
+        // 验证商品名称和购买原因是否为空
+        if (string.IsNullOrWhiteSpace(newProduct) || string.IsNullOrWhiteSpace(newReason))
+            // 验证不通过则直接返回
+            return;
+
+        // 设置添加状态为进行中
+        isAdding = true;
+        try
+        {
+            // 初始化可空价格变量
+            decimal? price = null;
+            // 尝试解析价格字符串为数字，若有效且大于0则赋值
+            if (decimal.TryParse(newPrice, out var p) && p > 0)
+                // 赋值解析后的价格
+                price = p;
+
+            // 调用服务添加新商品到等待清单
+            await ListService.AddAsync(newProduct, newReason, price);
+            
+            // 清空商品名称输入框
+            newProduct = "";
+            // 清空价格输入框
+            newPrice = "";
+            // 清空原因输入框
+            newReason = "";
+            
+            // 重新加载数据以更新UI
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            // 记录添加操作的错误日志
+            Logger.LogError(ex, "添加冷静清单失败");
+        }
+        finally
+        {
+            // 无论成功失败都重置添加状态
+            isAdding = false;
+        }
+    }
+
+    // 从清单中移除指定商品的异步方法
+    private async Task RemoveItem(Guid id)
+    {
+        // 调用服务移除指定ID的商品
+        await ListService.RemoveAsync(id);
+        // 重新加载数据以更新UI
+        await LoadDataAsync();
+    }
+
+    // 需求匹配阈值属性，从用户设置获取，默认值为70
+    private int Threshold => userSettings?.DemandMatchThreshold ?? 70;
+
+    // 判断商品匹配度是否低于用户设置的阈值
+    private bool IsBelowThreshold(WaitingListItem item)
+    {
+        // 优先使用详细分析的需求匹配分数，其次使用快速分析的合理性分数，默认0
+        var score = item.BudgetAnalysis?.NeedMatchScore ?? item.QuickAnalysis?.RationalityScore ?? 0;
+        // 返回分数是否低于阈值
+        return score < Threshold;
+    }
+
+    // 获取商品匹配度显示文本（带百分号）
+    private string GetMatchScoreDisplay(WaitingListItem item)
+    {
+        // 获取匹配分数
+        var score = item.BudgetAnalysis?.NeedMatchScore ?? item.QuickAnalysis?.RationalityScore ?? 0;
+        // 返回带百分号的格式化字符串
+        return $"{score}%";
+    }
+
+    // 完成购买操作的异步方法
+    private async Task CompletePurchase(Guid id)
+    {
+        // 调用服务将商品标记为已购买
+        await ListService.CompletePurchaseAsync(id);
+        // 重新加载数据以更新UI
+        await LoadDataAsync();
+    }
+
+    // 获取剩余时间的友好文本显示
+    private string GetRemainingTime(DateTime expiresAt)
+    {
+        // 计算距离过期的剩余时间
+        var remaining = expiresAt - DateTime.UtcNow;
+        // 若剩余时间已过期，返回过期提示
+        if (remaining.TotalSeconds <= 0)
+            // 返回已过期文本
+            return "已过期";
+
+        // 若剩余时间大于等于24小时，显示为小时
+        if (remaining.TotalHours >= 24)
+            // 返回整天数+小时数格式
+            return $"{(int)remaining.TotalHours}小时";
+
+        // 若剩余时间大于等于1小时，显示为小时+分钟
+        if (remaining.TotalHours >= 1)
+            // 返回小时+分钟格式
+            return $"{(int)remaining.TotalHours}小时{remaining.Minutes}分";
+
+        // 剩余时间不足1小时，显示为分钟
+        return $"{remaining.Minutes}分钟";
+    }
+
+    // 获取倒计时徽章的内联样式，根据剩余时间返回不同颜色
+    private string GetCountdownStyle(DateTime expiresAt)
+    {
+        // 计算剩余时间
+        var remaining = expiresAt - DateTime.UtcNow;
+        // 剩余不足1小时，返回红色警告样式
+        if (remaining.TotalHours < 1)
+            // 返回红色背景样式
+            return "background: #fed7d7; color: #c53030;";
+        // 剩余不足6小时，返回橙色警告样式
+        if (remaining.TotalHours < 6)
+            // 返回橙色背景样式
+            return "background: #feebc8; color: #c05621;";
+        // 剩余时间充足，返回绿色安全样式
+        return "background: #c6f6d5; color: #276749;";
+    }
+
+    // 实现 IDisposable 接口，释放资源
+    public void Dispose()
+    {
+        // 释放定时器资源
+        refreshTimer?.Dispose();
+        // 取消订阅数据变更事件
+        ListService.DataChanged -= OnDataChanged;
+    }
+}

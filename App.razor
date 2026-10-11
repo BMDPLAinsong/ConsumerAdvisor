@@ -1,0 +1,18 @@
+@* 路由器组件,用于根据程序集发现并匹配路由 *@
+@* AppAssembly 指定要扫描路由的程序集 *@
+<Router AppAssembly="@typeof(App).Assembly">
+    @* 当找到匹配的路由时执行的内容 *@
+    <Found Context="routeData">
+        @* 使用 RouteView 渲染匹配的页面组件,并指定默认布局 *@
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+        @* 在导航后自动聚焦到 h1 元素,提升无障碍访问体验 *@
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+    @* 当未找到匹配的路由时执行的内容 *@
+    <NotFound>
+        @* 使用 LayoutView 渲染布局,并显示友好的 404 提示信息 *@
+        <LayoutView Layout="@typeof(MainLayout)">
+            <p>抱歉,未找到该页面。</p>
+        </LayoutView>
+    </NotFound>
+</Router>

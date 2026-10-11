@@ -1,0 +1,53 @@
+@* 指定当前页面的路由为根路径 "/" *@
+@page "/"
+@* 引入 Blazor Web 组件相关的命名空间 *@
+@using Microsoft.AspNetCore.Components.Web
+@* 设置当前页面的命名空间 *@
+@namespace ConsumerAdvisor.Api.Pages
+@* 引入所有 Microsoft.AspNetCore.Mvc.TagHelpers 标签助手 *@
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+
+@* HTML5 文档类型声明 *@
+<!DOCTYPE html>
+@* 设置页面语言为简体中文 *@
+<html lang="zh-CN">
+@* 头部区域开始 *@
+<head>
+    @* 设置字符编码为 UTF-8 *@
+    <meta charset="UTF-8" />
+    @* 设置视口,使页面在移动设备上正确显示 *@
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    @* 设置网站根路径 *@
+    <base href="~/" />
+    @* 设置页面标题 *@
+    <title>消费建议分析器</title>
+    @* 引入 Google Fonts 的 Inter 字体 *@
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    @* 内联样式区域开始 *@
+    <style>
+        @* 全局重置:清除所有元素的默认外边距、内边距,并使用 border-box 盒模型 *@
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        @* 设置 html 和 body 的字体、背景色和最小高度 *@
+        html, body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #667eea;
+            min-height: 100vh;
+        }
+    @* 内联样式区域结束 *@
+    </style>
+@* 头部区域结束 *@
+</head>
+@* 主体区域开始 *@
+<body>
+    @* 渲染根组件 App,使用 Server 渲染模式 *@
+    <component type="typeof(App)" render-mode="ServerPrerendered" />
+    @* 引入 Blazor Server 的 JavaScript 脚本 *@
+    <script src="_framework/blazor.server.js"></script>
+@* 主体区域结束 *@
+</body>
+@* HTML 文档结束 *@
+</html>

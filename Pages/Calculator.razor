@@ -1,0 +1,687 @@
+@* 页面路由声明，访问路径为 /calculator *@
+@page "/calculator"
+@* 注入 CalculatorService 服务实例，用于调用计算相关API *@
+@inject ConsumerAdvisor.Api.Services.CalculatorService CalculatorService
+@* 注入 ILogger 日志记录器，用于记录异常信息 *@
+@inject ILogger<Calculator> Logger
+
+@* 页面根容器，应用全屏背景渐变 *@
+<div class="calculator-page">
+    @* 占位div，对应 ::before 伪元素的装饰层 *@
+    <div class="calculator-page::before"></div>
+    
+    @* 内容容器，居中显示并限制最大宽度 *@
+    <div class="container">
+        @* 页面头部区域，包含返回按钮、标题和副标题 *@
+        <div class="page-header">
+            @* 返回主页的导航链接 *@
+            <a href="/" class="back-btn">← 返回主页</a>
+            @* 页面主标题 *@
+            <h1>💰 消费计算器</h1>
+            @* 页面副标题描述 *@
+            <p>帮你算清每一分钱的价值</p>
+        </div>
+
+        @* 标签页切换区域，用于在两种计算器之间切换 *@
+        <div class="tabs">
+            @* 标签1：切换到单次使用成本计算 *@
+            <button @onclick="() => activeTab = 0" 
+                    class="tab-btn @(activeTab == 0 ? "active" : "")">
+                📊 单次使用成本
+            </button>
+            @* 标签2：切换到支付方案模拟 *@
+            <button @onclick="() => activeTab = 1" 
+                    class="tab-btn @(activeTab == 1 ? "active" : "")">
+                💳 支付方案模拟
+            </button>
+        </div>
+
+        @* 根据 activeTab 的值显示不同的计算器面板 *@
+        @if (activeTab == 0)
+        {
+            @* 单次使用成本计算器面板 *@
+            <div class="card">
+                @* 卡片标题 *@
+                <h2>📊 单次使用成本计算器</h2>
+                @* 卡片副标题，说明该计算器的用途 *@
+                <p class="subtitle">计算商品的真实使用成本，对比行业平均，帮你判断性价比</p>
+
+                @* 商品价格输入表单组 *@
+                <div class="form-group">
+                    <label>商品价格（元）</label>
+                    @* 商品价格输入框，双向绑定到 costInput.ProductPrice *@
+                    <input type="number" @bind="costInput.ProductPrice" 
+                           class="input-field" placeholder="请输入商品价格" min="0" />
+                </div>
+
+                @* 并排的两个表单组：预计使用年限和预计年使用次数 *@
+                <div class="form-row">
+                    @* 预计使用年限输入框 *@
+                    <div class="form-group">
+                        <label>预计使用年限（年）</label>
+                        <input type="number" @bind="costInput.ExpectedYears" 
+                               class="input-field" placeholder="3" min="1" />
+                    </div>
+                    @* 预计年使用次数输入框 *@
+                    <div class="form-group">
+                        <label>预计年使用次数</label>
+                        <input type="number" @bind="costInput.ExpectedTimesPerYear" 
+                               class="input-field" placeholder="365" min="1" />
+                    </div>
+                </div>
+
+                @* 并排的两个表单组：商品类别下拉选择和维护/配件成本输入 *@
+                <div class="form-row">
+                    @* 商品类别下拉选择框 *@
+                    <div class="form-group">
+                        <label>商品类别</label>
+                        <select @bind="costInput.Category" class="input-field">
+                            <option value="">请选择类别</option>
+                            <option value="汽车">🚗 汽车</option>
+                            <option value="电子产品">📱 电子产品</option>
+                            <option value="服装">👔 服装</option>
+                            <option value="家居">🏠 家居</option>
+                            <option value="食品">🍔 食品</option>
+                            <option value="家电">🔌 家电</option>
+                            <option value="数码">💻 数码</option>
+                            <option value="运动">⚽ 运动</option>
+                            <option value="美妆">💄 美妆</option>
+                            <option value="书籍">📚 书籍</option>
+                        </select>
+                    </div>
+                    @* 维护/配件成本输入框 *@
+                    <div class="form-group">
+                        <label>维护/配件成本（元）</label>
+                        <input type="number" @bind="costInput.MaintenanceCost" 
+                               class="input-field" placeholder="0" min="0" />
+                    </div>
+                </div>
+
+                @* 计算按钮，点击触发 CalculateCost 方法，计算中禁用 *@
+                <button @onclick="CalculateCost" disabled="@isCalculating" class="btn-calculate">
+                    @(isCalculating ? "计算中..." : "📈 开始计算")
+                </button>
+
+                @* 当计算结果不为空时显示结果区域 *@
+                @if (costResult != null)
+                {
+                    <div class="result-section">
+                        @* 结果头部区域，显示评分徽章和推荐语 *@
+                        <div class="result-header">
+                            @* 评级徽章，显示计算结果的等级 *@
+                            <span class="rating-badge">@costResult.Rating</span>
+                            @* 推荐语描述 *@
+                            <p>@costResult.Recommendation</p>
+                        </div>
+
+                        @* 统计数据网格布局，展示关键指标 *@
+                        <div class="stats-grid">
+                            @* 总投入成本 *@
+                            <div class="stat-item">
+                                <div class="stat-value">¥@costResult.TotalCost.ToString("N2")</div>
+                                <div class="stat-label">总投入成本</div>
+                            </div>
+                            @* 单次使用成本（高亮显示） *@
+                            <div class="stat-item highlight">
+                                <div class="stat-value">¥@costResult.SingleUseCost.ToString("N4")</div>
+                                <div class="stat-label">单次使用成本</div>
+                            </div>
+                            @* 当存在行业平均成本时显示对比数据 *@
+                            @if (costResult.IndustryAverageCost.HasValue)
+                            {
+                                @* 行业平均成本 *@
+                                <div class="stat-item">
+                                    <div class="stat-value">¥@costResult.IndustryAverageCost.Value.ToString("N2")</div>
+                                    <div class="stat-label">行业平均成本</div>
+                                </div>
+                                @* 性价比指数 *@
+                                <div class="stat-item">
+                                    <div class="stat-value">@costResult.ValueIndex.ToString("N2")x</div>
+                                    <div class="stat-label">性价比指数</div>
+                                </div>
+                            }
+                            else
+                            {
+                                @* 无行业平均数据时，显示预计总使用次数 *@
+                                <div class="stat-item">
+                                    <div class="stat-value">@costResult.TotalUses.ToString("N0")</div>
+                                    <div class="stat-label">预计总使用次数</div>
+                                </div>
+                                @* 行业平均占位符 *@
+                                <div class="stat-item">
+                                    <div class="stat-value">-</div>
+                                    <div class="stat-label">行业平均</div>
+                                </div>
+                            }
+                        </div>
+
+                        @* 当存在替代方案时显示推荐列表 *@
+                        @if (costResult.Alternatives.Any())
+                        {
+                            <div class="details-card">
+                                @* 替代方案标题 *@
+                                <h3>💡 替代方案推荐</h3>
+                                @* 遍历每个替代方案并渲染 *@
+                                @foreach (var alt in costResult.Alternatives)
+                                {
+                                    <div class="alternative-item">
+                                        @* 替代方案头部：名称和每次使用成本 *@
+                                        <div class="alt-header">
+                                            <span class="alt-name">@alt.Name</span>
+                                            <span class="alt-price">¥@alt.CostPerUse.ToString("N2")/次</span>
+                                        </div>
+                                        @* 替代方案描述 *@
+                                        <p class="alt-desc">@alt.Description</p>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            @* 支付方案模拟器面板 *@
+            <div class="card">
+                @* 卡片标题 *@
+                <h2>💳 支付方案模拟器</h2>
+                @* 卡片副标题 *@
+                <p class="subtitle">模拟不同分期方案，找到最适合你的支付方式</p>
+
+                @* 商品总价输入表单组 *@
+                <div class="form-group">
+                    <label>商品总价（元）</label>
+                    <input type="number" @bind="paymentInput.TotalAmount" 
+                           class="input-field" placeholder="请输入商品总价" min="0" />
+                </div>
+
+                @* 首付金额和分期月数并排显示 *@
+                <div class="form-row">
+                    @* 首付金额输入框 *@
+                    <div class="form-group">
+                        <label>首付金额（元）</label>
+                        <input type="number" @bind="paymentInput.DownPayment" 
+                               class="input-field" placeholder="0" min="0" />
+                    </div>
+                    @* 分期月数下拉选择框 *@
+                    <div class="form-group">
+                        <label>分期月数</label>
+                        <select @bind="paymentInput.InstallmentMonths" class="input-field">
+                            <option value="3">3个月</option>
+                            <option value="6">6个月</option>
+                            <option value="12">12个月</option>
+                            <option value="18">18个月</option>
+                            <option value="24">24个月</option>
+                            <option value="36">36个月</option>
+                            <option value="48">48个月</option>
+                            <option value="60">60个月</option>
+                        </select>
+                    </div>
+                </div>
+
+                @* 年化利率输入表单组 *@
+                <div class="form-group">
+                    <label>年化利率（%）</label>
+                    <input type="number" @bind="paymentInput.AnnualInterestRate" 
+                           class="input-field" placeholder="3.5" min="0" step="0.1" />
+                </div>
+
+                @* 模拟计算按钮 *@
+                <button @onclick="CalculatePayment" class="btn-calculate">
+                    📋 模拟计算
+                </button>
+
+                @* 当支付结果不为空时显示结果区域 *@
+                @if (paymentResult != null)
+                {
+                    <div class="result-section">
+                        @* 结果头部：负担能力评级和描述 *@
+                        <div class="result-header">
+                            <span class="rating-badge affordability">@paymentResult.AffordabilityRating</span>
+                            <p>@paymentResult.AffordabilityDescription</p>
+                        </div>
+
+                        @* 统计数据网格 *@
+                        <div class="stats-grid">
+                            @* 首付金额 *@
+                            <div class="stat-item">
+                                <div class="stat-value">¥@paymentResult.DownPayment.ToString("N2")</div>
+                                <div class="stat-label">首付金额</div>
+                            </div>
+                            @* 月供金额（高亮显示） *@
+                            <div class="stat-item highlight">
+                                <div class="stat-value">¥@paymentResult.MonthlyPayment.ToString("N2")</div>
+                                <div class="stat-label">月供金额</div>
+                            </div>
+                            @* 总利息 *@
+                            <div class="stat-item">
+                                <div class="stat-value">¥@paymentResult.TotalInterest.ToString("N2")</div>
+                                <div class="stat-label">总利息</div>
+                            </div>
+                            @* 还款总额 *@
+                            <div class="stat-item">
+                                <div class="stat-value">¥@paymentResult.TotalAmountWithInterest.ToString("N2")</div>
+                                <div class="stat-label">还款总额</div>
+                            </div>
+                        </div>
+
+                        @* 贷款详细信息卡片 *@
+                        <div class="details-card">
+                            <h3>贷款信息</h3>
+                            <div class="detail-item">
+                                <span>贷款金额</span>
+                                <span>¥@paymentResult.LoanAmount.ToString("N2")</span>
+                            </div>
+                            <div class="detail-item">
+                                <span>分期月数</span>
+                                <span>@paymentResult.InstallmentMonths 个月</span>
+                            </div>
+                            <div class="detail-item">
+                                <span>年化利率</span>
+                                <span>@paymentResult.AnnualInterestRate.ToString("N1")%</span>
+                            </div>
+                        </div>
+
+                        @* 还款计划表区域 *@
+                        <div class="schedule-section">
+                            <h3>还款计划表</h3>
+                            @* 计划表表头 *@
+                            <div class="schedule-header">
+                                <span>期数</span>
+                                <span>月供</span>
+                                <span>本金</span>
+                                <span>利息</span>
+                                <span>剩余本金</span>
+                            </div>
+                            @* 计划表主体，显示前6期 *@
+                            <div class="schedule-body">
+                                @* 遍历还款计划的前6期 *@
+                                @foreach (var item in paymentResult.Schedule.Take(6))
+                                {
+                                    <div class="schedule-row">
+                                        <span>第@item.Month期</span>
+                                        <span>¥@item.Payment.ToString("N2")</span>
+                                        <span>¥@item.Principal.ToString("N2")</span>
+                                        <span>¥@item.Interest.ToString("N2")</span>
+                                        <span>¥@item.RemainingPrincipal.ToString("N2")</span>
+                                    </div>
+                                }
+                                @* 如果期数超过6期，显示省略提示 *@
+                                @if (paymentResult.Schedule.Count > 6)
+                                {
+                                    <div class="schedule-row more">
+                                        <span colspan="5">还有 @(paymentResult.Schedule.Count - 6) 期...</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@* CSS 样式部分 *@
+<style>
+    .calculator-page {
+        min-height: 100vh;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #5a3f99 100%);
+        padding: 40px 20px;
+        position: relative;
+    }
+    .calculator-page::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-image: 
+            radial-gradient(circle at 20% 80%, rgba(255, 255, 255, 0.08) 0%, transparent 50%),
+            radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 50%);
+        pointer-events: none;
+        z-index: 0;
+    }
+    .container {
+        max-width: 700px;
+        margin: 0 auto;
+        position: relative;
+        z-index: 1;
+    }
+    .page-header {
+        margin-bottom: 32px;
+    }
+    .back-btn {
+        display: inline-block;
+        color: rgba(255, 255, 255, 0.9);
+        text-decoration: none;
+        font-size: 14px;
+        margin-bottom: 16px;
+        transition: color 0.2s ease;
+    }
+    .back-btn:hover {
+        color: white;
+    }
+    .page-header h1 {
+        color: white;
+        font-size: 32px;
+        margin: 0;
+    }
+    .page-header p {
+        color: rgba(255, 255, 255, 0.85);
+        font-size: 16px;
+        margin-top: 8px;
+    }
+    .tabs {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 24px;
+    }
+    .tab-btn {
+        flex: 1;
+        padding: 14px 20px;
+        border: none;
+        border-radius: 12px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        background: rgba(255, 255, 255, 0.15);
+        color: rgba(255, 255, 255, 0.9);
+    }
+    .tab-btn:hover {
+        background: rgba(255, 255, 255, 0.25);
+    }
+    .tab-btn.active {
+        background: white;
+        color: #667eea;
+    }
+    .card {
+        background: white;
+        border-radius: 20px;
+        padding: 32px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+    }
+    .card h2 {
+        color: #2d3748;
+        font-size: 22px;
+        margin: 0 0 8px 0;
+    }
+    .subtitle {
+        color: #718096;
+        font-size: 14px;
+        margin: 0 0 24px 0;
+    }
+    .form-group {
+        margin-bottom: 20px;
+    }
+    .form-row {
+        display: flex;
+        gap: 16px;
+    }
+    .form-row .form-group {
+        flex: 1;
+    }
+    .form-group label {
+        display: block;
+        color: #4a5568;
+        font-size: 14px;
+        font-weight: 500;
+        margin-bottom: 8px;
+    }
+    .input-field {
+        width: 100%;
+        padding: 14px 16px;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 16px;
+        transition: all 0.2s ease;
+    }
+    .input-field:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    .btn-calculate {
+        width: 100%;
+        padding: 16px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        margin-top: 8px;
+    }
+    .btn-calculate:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(102, 126, 234, 0.3);
+    }
+    .result-section {
+        margin-top: 24px;
+        animation: fadeIn 0.3s ease;
+    }
+    @@keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .result-header {
+        text-align: center;
+        margin-bottom: 24px;
+    }
+    .rating-badge {
+        display: inline-block;
+        padding: 8px 20px;
+        border-radius: 20px;
+        font-size: 16px;
+        font-weight: 600;
+        background: linear-gradient(135deg, #c6f6d5 0%, #9ae6b4 100%);
+        color: #276749;
+    }
+    .rating-badge.affordability {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    .result-header p {
+        color: #718096;
+        font-size: 14px;
+        margin-top: 8px;
+    }
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+    .stat-item {
+        background: #f7fafc;
+        padding: 20px;
+        border-radius: 16px;
+        text-align: center;
+    }
+    .stat-item.highlight {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .stat-item.highlight .stat-value {
+        color: white;
+    }
+    .stat-item.highlight .stat-label {
+        color: rgba(255, 255, 255, 0.85);
+    }
+    .stat-value {
+        font-size: 24px;
+        font-weight: 700;
+        color: #2d3748;
+    }
+    .stat-label {
+        font-size: 13px;
+        color: #718096;
+        margin-top: 4px;
+    }
+    .details-card {
+        background: #f7fafc;
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 24px;
+    }
+    .details-card h3 {
+        font-size: 16px;
+        color: #2d3748;
+        margin: 0 0 16px 0;
+    }
+    .detail-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 0;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .detail-item:last-child {
+        border-bottom: none;
+    }
+    .detail-item span:first-child {
+        color: #718096;
+        font-size: 14px;
+    }
+    .detail-item span:last-child {
+        color: #2d3748;
+        font-weight: 600;
+        font-size: 14px;
+    }
+    .alternative-item {
+        padding: 12px 0;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .alternative-item:last-child {
+        border-bottom: none;
+    }
+    .alt-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 4px;
+    }
+    .alt-name {
+        font-weight: 600;
+        color: #2d3748;
+    }
+    .alt-price {
+        color: #667eea;
+        font-weight: 600;
+    }
+    .alt-desc {
+        color: #718096;
+        font-size: 13px;
+        margin: 0;
+    }
+    .schedule-section {
+        background: #f7fafc;
+        border-radius: 16px;
+        padding: 20px;
+        overflow-x: auto;
+    }
+    .schedule-section h3 {
+        font-size: 16px;
+        color: #2d3748;
+        margin: 0 0 16px 0;
+    }
+    .schedule-header {
+        display: grid;
+        grid-template-columns: 80px 80px 80px 80px 100px;
+        gap: 8px;
+        padding: 12px 16px;
+        background: #edf2f7;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #4a5568;
+    }
+    .schedule-body {
+        margin-top: 8px;
+    }
+    .schedule-row {
+        display: grid;
+        grid-template-columns: 80px 80px 80px 80px 100px;
+        gap: 8px;
+        padding: 10px 16px;
+        background: white;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        font-size: 13px;
+        color: #2d3748;
+    }
+    .schedule-row.more {
+        text-align: center;
+        color: #a0aec0;
+        grid-template-columns: 1fr;
+    }
+</style>
+
+@* C# 代码逻辑部分 *@
+@code {
+    // 当前激活的标签页索引，0为单次使用成本，1为支付方案
+    private int activeTab = 0;
+    // 单次使用成本计算器的输入参数对象
+    private CostCalculatorInput costInput = new();
+    // 单次使用成本计算结果，可为空表示尚未计算
+    private CostCalculationResult? costResult;
+    // 支付方案模拟器的输入参数对象
+    private PaymentPlanInput paymentInput = new();
+    // 支付方案模拟结果，可为空表示尚未计算
+    private PaymentPlanResult? paymentResult;
+    // 计算进行中标志，用于禁用按钮防止重复提交
+    private bool isCalculating = false;
+
+    // 单次使用成本计算方法：异步调用CalculatorService获取计算结果
+    private async Task CalculateCost()
+    {
+        // 验证商品价格必须大于0，否则直接返回
+        if (costInput.ProductPrice <= 0) return;
+        
+        // 设置计算中状态为true
+        isCalculating = true;
+        try
+        {
+            // 调用服务层异步计算使用成本
+            costResult = await CalculatorService.CalculateUsageCostAsync(costInput);
+        }
+        catch (Exception ex)
+        {
+            // 捕获异常并记录错误日志
+            Logger.LogError(ex, "计算使用成本失败");
+        }
+        finally
+        {
+            // 无论成功或失败都重置计算中状态
+            isCalculating = false;
+        }
+    }
+
+    // 支付方案模拟计算方法：异步调用CalculatorService获取分期方案结果
+    private async Task CalculatePayment()
+    {
+        // 验证商品总价必须大于0，否则直接返回
+        if (paymentInput.TotalAmount <= 0) return;
+
+        // 设置计算中状态为true
+        isCalculating = true;
+        try
+        {
+            // 调用服务层异步计算支付方案
+            paymentResult = await CalculatorService.CalculatePaymentPlanAsync(paymentInput);
+        }
+        catch (Exception ex)
+        {
+            // 捕获异常并记录错误日志
+            Logger.LogError(ex, "计算支付方案失败");
+        }
+        finally
+        {
+            // 无论成功或失败都重置计算中状态
+            isCalculating = false;
+        }
+    }
+}

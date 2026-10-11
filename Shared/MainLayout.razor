@@ -1,0 +1,28 @@
+@* 设置当前组件的命名空间 *@
+@namespace ConsumerAdvisor.Api.Shared
+@* 继承 LayoutComponentBase 布局组件基类 *@
+@inherits LayoutComponentBase
+
+@* 页面根容器,使用 flex 布局 *@
+<div class="page">
+    @* 主内容区域 *@
+    <div class="main">
+        @* 渲染子组件内容(Body 由布局宿主提供) *@
+        @Body
+    </div>
+</div>
+
+@* 样式区域开始 *@
+<style>
+    @* .page 样式:相对定位,使用 flex 纵向布局 *@
+    .page {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+    }
+
+    @* .main 样式:占据剩余空间 *@
+    .main {
+        flex: 1;
+    }
+</style>

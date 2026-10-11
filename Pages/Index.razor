@@ -1,0 +1,666 @@
+@* 页面路由配置 - 设置为首页 *@
+@page "/"
+@* 注入需求分析服务，用于消费心理分析 *@
+@inject RequirementAnalysisService Service
+@* 注入冷静清单服务，用于管理待冷静处理的商品列表 *@
+@inject WaitingListService ListService
+@* 注入输入解析服务，用于解析用户输入的购买想法 *@
+@inject InputParserService ParserService
+@* 注入用户设置服务，用于获取用户偏好配置 *@
+@inject UserSettingsService SettingsService
+@* 注入日志记录器，用于记录运行日志 *@
+@inject ILogger<Index> Logger
+
+@* 页面根容器 - 包裹整个页面内容 *@
+<div class="page-wrapper">
+    @* 主内容容器 - 限制最大宽度居中显示 *@
+    <div class="container">
+        @* 页面头部导航区域 *@
+        <div class="page-header">
+            @* 导航链接容器 *@
+            <div class="nav-links">
+                @* 首页导航按钮 - 当前页面高亮显示 *@
+                <a href="/" class="nav-link active">🏠 首页</a>
+                @* 冷静清单导航按钮 - 带待处理数量角标 *@
+                <a href="/waiting-list" class="nav-link">
+                    @* 冷静清单图标 *@
+                    🧊 冷静清单
+                    @* 当有待处理项目时显示数量角标 *@
+                    @if (pendingCount > 0)
+                    {
+                        @* 显示待处理商品数量的红色徽章 *@
+                        <span class="badge">@pendingCount</span>
+                    }
+                </a>
+                @* 计算器导航按钮 *@
+                <a href="/calculator" class="nav-link">💰 计算器</a>
+            </div>
+        </div>
+
+        @* 主卡片区域 - 包含输入表单和分析按钮 *@
+        <div class="card">
+            @* 页面标题 *@
+            <h1>消费建议分析器</h1>
+            @* 副标题说明 - AI驱动的消费心理学分析简介 *@
+            <p class="subtitle">AI 驱动的消费心理学分析，帮您做出更理性的购买决策</p>
+
+            @* 输入框区域 *@
+            <div class="input-group">
+                @* 输入框标签 *@
+                <label for="inputText">请输入您的购买想法</label>
+                @* 多行文本输入框 - 用于输入购买想法 *@
+                <textarea id="inputText" @bind="inputText" placeholder="例如：我想买戴森吹风机，因为女朋友生日快到了" rows="4" class="@(hasError ? "error" : "")"></textarea>
+                @* 输入格式说明提示 *@
+                <div class="example">格式：我想买{商品}，因为{原因}</div>
+            </div>
+
+            @* 按钮区域 *@
+            <div class="button-group">
+                @* 分析按钮 - 触发购买建议分析 *@
+                <button class="btn @(isLoading ? "loading" : "")" @onclick="Analyze" disabled="@isLoading">@(isLoading ? "分析中..." : "🔍 分析购买建议")</button>
+            </div>
+
+            @* 错误提示区域 - 仅在发生错误时显示 *@
+            @if (hasError)
+            {
+                @* 显示错误消息 *@
+                <div class="error-message">@errorMessage</div>
+            }
+        </div>
+
+        @* 分析结果卡片 - 仅在有分析结果时显示 *@
+        @if (analysisResult != null)
+        {
+            @* 结果卡片容器 *@
+            <div class="result-card">
+                @* 结果头部 - 包含标题和评分徽章 *@
+                <div class="result-header">
+                    @* 结果标题 *@
+                    <div class="result-title">分析结果</div>
+                    @* 理性度评分徽章 - 根据分数显示不同颜色 *@
+                    <div class="score-badge @scoreClass">@analysisResult.RationalityScore</div>
+                </div>
+
+                @* 结果网格布局 - 展示各项分析指标 *@
+                <div class="result-grid">
+                    @* 商品名称展示 *@
+                    <div class="result-item">
+                        @* 指标标签 *@
+                        <div class="result-label">商品</div>
+                        @* 指标值 - 商品名称 *@
+                        <div class="result-value">@analysisResult.Product</div>
+                    </div>
+                    @* 购买原因展示 *@
+                    <div class="result-item">
+                        @* 指标标签 *@
+                        <div class="result-label">购买原因</div>
+                        @* 指标值 - 购买原因 *@
+                        <div class="result-value">@analysisResult.Reason</div>
+                    </div>
+                    @* 需求类型展示 *@
+                    <div class="result-item">
+                        @* 指标标签 *@
+                        <div class="result-label">需求类型</div>
+                        @* 指标值 - 需求类型 *@
+                        <div class="result-value">@analysisResult.DemandType</div>
+                    </div>
+                    @* 建议等待时间展示 *@
+                    <div class="result-item">
+                        @* 指标标签 *@
+                        <div class="result-label">建议等待</div>
+                        @* 指标值 - 建议等待小时数 *@
+                        <div class="result-value">@analysisResult.SuggestedWaitingHours 小时</div>
+                    </div>
+                    @* 相似用户购买频率展示 *@
+                    <div class="result-item">
+                        @* 指标标签 *@
+                        <div class="result-label">相似购买频率</div>
+                        @* 指标值 - 相似用户购买频率 *@
+                        <div class="result-value">@analysisResult.SimilarUserFrequency</div>
+                    </div>
+                </div>
+
+                @* 非理性因素展示区域 *@
+                <div class="motivations-list">
+                    @* 非理性因素标签 *@
+                    <div class="result-label">非理性因素</div>
+                    @* 非理性因素标签列表 *@
+                    <div>
+                        @* 判断是否有非理性因素数据 *@
+                        @if (analysisResult.Motivations != null && analysisResult.Motivations.Any())
+                        {
+                            @* 遍历所有非理性因素 *@
+                            @foreach (var motivation in analysisResult.Motivations)
+                            {
+                                @* 显示单个非理性因素标签 *@
+                                <span class="motivation-tag">@motivation</span>
+                            }
+                        }
+                        else
+                        {
+                            @* 无非理性因素时显示占位符 *@
+                            <span>-</span>
+                        }
+                    </div>
+                </div>
+
+                @* 加入冷静清单按钮区域 - 当评分低于阈值时显示 *@
+                @if (analysisResult.RationalityScore < Threshold)
+                {
+                    @* 冷静清单操作区域 *@
+                    <div class="waiting-list-action">
+                        @* 提示信息 - 建议冷静一下 *@
+                        <p class="waiting-hint">⚠️ 需求匹配度 @analysisResult.RationalityScore% 低于阈值 @Threshold%，建议冷静一下再做决定</p>
+                        @* 加入冷静清单按钮 *@
+                        <button class="btn-waiting-list" @onclick="AddToWaitingList">
+                            @* 按钮文本 *@
+                            🧊 加入冷静清单
+                        </button>
+                    </div>
+                }
+            </div>
+        }
+
+        @* 页面底部版权信息 *@
+        <div class="footer">
+            @* 版权声明文本 *@
+            <p>基于XXX大模型驱动 · 仅供参考</p>
+        </div>
+    </div>
+</div>
+
+<style>
+    .page-wrapper {
+        min-height: 100vh;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #5a3f99 100%);
+        padding: 60px 20px;
+        position: relative;
+    }
+
+    .page-wrapper::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-image:
+            radial-gradient(circle at 20% 80%, rgba(255, 255, 255, 0.08) 0%, transparent 50%),
+            radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 50%),
+            radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.03) 0%, transparent 70%);
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    .container {
+        max-width: 800px;
+        margin: 0 auto;
+        position: relative;
+        z-index: 1;
+    }
+
+    .page-header {
+        margin-bottom: 24px;
+    }
+
+    .nav-links {
+        display: flex;
+        gap: 16px;
+        justify-content: center;
+    }
+
+    .nav-link {
+        color: rgba(255, 255, 255, 0.9);
+        text-decoration: none;
+        padding: 10px 20px;
+        border-radius: 30px;
+        font-size: 14px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        background: rgba(255, 255, 255, 0.1);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .nav-link:hover {
+        background: rgba(255, 255, 255, 0.2);
+        color: white;
+    }
+
+    .nav-link.active {
+        background: rgba(255, 255, 255, 0.25);
+        color: white;
+    }
+
+    .badge {
+        background: #e53e3e;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .card {
+        background: white;
+        border-radius: 20px;
+        box-shadow:
+            0 4px 6px rgba(0, 0, 0, 0.04),
+            0 10px 20px rgba(0, 0, 0, 0.08);
+        padding: 48px;
+        margin-bottom: 24px;
+        border: 1px solid rgba(255, 255, 255, 0.8);
+    }
+
+    h1 {
+        text-align: center;
+        color: #2d3748;
+        font-size: 26px;
+        margin-bottom: 8px;
+        font-weight: 700;
+    }
+
+    .subtitle {
+        text-align: center;
+        color: #718096;
+        font-size: 15px;
+        margin-bottom: 36px;
+        font-weight: 400;
+    }
+
+    .input-group {
+        margin-bottom: 24px;
+    }
+
+    label {
+        display: block;
+        margin-bottom: 10px;
+        color: #4a5568;
+        font-weight: 500;
+        font-size: 14px;
+    }
+
+    textarea {
+        width: 100%;
+        padding: 16px 18px;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 15px;
+        resize: vertical;
+        transition: all 0.2s ease;
+        font-family: inherit;
+        background: #f7fafc;
+        color: #2d3748;
+    }
+
+    textarea:focus {
+        outline: none;
+        border-color: #667eea;
+        background: white;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    textarea.error {
+        border-color: #e53e3e;
+        background: #fff5f5;
+    }
+
+    .example {
+        background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+        padding: 14px 18px;
+        border-radius: 10px;
+        font-size: 13px;
+        color: #718096;
+        margin-top: 12px;
+        font-style: italic;
+        border-left: 3px solid #667eea;
+    }
+
+    .btn {
+        width: 100%;
+        padding: 16px 24px;
+        background: linear-gradient(135deg, #667eea 0%, #5a67d8 100%);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        letter-spacing: 0.5px;
+    }
+
+    .btn:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(102, 126, 234, 0.25);
+    }
+
+    .btn:disabled {
+        opacity: 0.65;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .btn.loading {
+        position: relative;
+        color: transparent;
+    }
+
+    .btn.loading::after {
+        content: '';
+        position: absolute;
+        width: 22px;
+        height: 22px;
+        border: 2.5px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        animation: spin 0.7s linear infinite;
+    }
+
+    @@keyframes spin {
+        to { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+
+    .result-card {
+        background: white;
+        border-radius: 20px;
+        box-shadow:
+            0 4px 6px rgba(0, 0, 0, 0.04),
+            0 10px 20px rgba(0, 0, 0, 0.08);
+        padding: 36px;
+        border: 1px solid rgba(255, 255, 255, 0.8);
+        animation: fadeIn 0.4s ease;
+    }
+
+    @@keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .result-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 28px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .result-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #2d3748;
+    }
+
+    .score-badge {
+        font-size: 22px;
+        font-weight: 700;
+        padding: 10px 24px;
+        border-radius: 24px;
+    }
+
+    .score-high {
+        background: linear-gradient(135deg, #c6f6d5 0%, #9ae6b4 100%);
+        color: #276749;
+    }
+
+    .score-medium {
+        background: linear-gradient(135deg, #feebc8 0%, #fbd38d 100%);
+        color: #c05621;
+    }
+
+    .score-low {
+        background: linear-gradient(135deg, #fed7d7 0%, #feb2b2 100%);
+        color: #c53030;
+    }
+
+    .result-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .result-item {
+        background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+        padding: 18px;
+        border-radius: 12px;
+        border: 1px solid rgba(226, 232, 240, 0.5);
+    }
+
+    .result-label {
+        font-size: 11px;
+        color: #a0aec0;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        font-weight: 500;
+    }
+
+    .result-value {
+        font-size: 15px;
+        font-weight: 600;
+        color: #2d3748;
+    }
+
+    .motivations-list {
+        background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid rgba(226, 232, 240, 0.5);
+    }
+
+    .motivation-tag {
+        display: inline-block;
+        padding: 8px 14px;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 20px;
+        font-size: 13px;
+        color: #4a5568;
+        margin: 5px;
+        transition: all 0.2s ease;
+    }
+
+    .motivation-tag:hover {
+        border-color: #667eea;
+        color: #667eea;
+    }
+
+    .error-message {
+        background: linear-gradient(135deg, #fff5f5 0%, #fed7d7 100%);
+        color: #c53030;
+        padding: 16px 20px;
+        border-radius: 12px;
+        margin-top: 20px;
+        border-left: 3px solid #e53e3e;
+        font-size: 14px;
+    }
+
+    .footer {
+        text-align: center;
+        color: rgba(255, 255, 255, 0.85);
+        font-size: 13px;
+        margin-top: 32px;
+        font-weight: 400;
+    }
+
+    .waiting-list-action {
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid #e2e8f0;
+        text-align: center;
+    }
+
+    .waiting-hint {
+        color: #718096;
+        font-size: 14px;
+        margin-bottom: 12px;
+    }
+
+    .btn-waiting-list {
+        padding: 12px 24px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 30px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .btn-waiting-list:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(102, 126, 234, 0.3);
+    }
+</style>
+
+@* C# 代码逻辑部分 - 页面交互逻辑和数据处理 *@
+@code {
+    // 输入文本变量 - 存储用户输入的购买想法
+    private string inputText = "";
+    // 加载状态标志 - 分析过程中为true
+    private bool isLoading = false;
+    // 错误状态标志 - 发生错误时为true
+    private bool hasError = false;
+    // 错误消息文本 - 存储错误提示信息
+    private string errorMessage = "";
+    // 分析结果对象 - 存储AI分析返回的结果，可为空
+    private AnalysisResultDto? analysisResult = null;
+    // 冷静清单待处理数量 - 显示在导航角标
+    private int pendingCount = 0;
+    // 用户设置对象 - 存储用户自定义配置
+    private UserSettings? userSettings;
+
+    // 页面初始化异步方法 - 组件加载时执行
+    protected override async Task OnInitializedAsync()
+    {
+        // 刷新待处理商品数量
+        await RefreshPendingCountAsync();
+        // 获取用户设置配置
+        userSettings = await SettingsService.GetSettingsAsync();
+    }
+
+    // 刷新待处理数量的异步方法
+    private async Task RefreshPendingCountAsync()
+    {
+        // 调用冷静清单服务获取待处理商品数量
+        pendingCount = await ListService.GetPendingCountAsync();
+    }
+
+    // 需求匹配阈值属性 - 从用户设置获取，默认70%
+    private int Threshold => userSettings?.DemandMatchThreshold ?? 70;
+    // 建议等待时长属性 - 从用户设置获取，默认24小时
+    private int WaitingHours => userSettings?.WaitingPeriodHours ?? 24;
+
+    // 评分样式类属性 - 根据理性度分数返回对应CSS类名
+    private string scoreClass => analysisResult?.RationalityScore switch
+    {
+        // 分数>=70返回高评分样式
+        >= 70 => "score-high",
+        // 分数>=40返回中评分样式
+        >= 40 => "score-medium",
+        // 其他情况返回低评分样式
+        _ => "score-low"
+    };
+
+    // 分析按钮点击处理方法 - 执行购买建议分析
+    private async Task Analyze()
+    {
+        // 验证输入是否为空
+        if (string.IsNullOrWhiteSpace(inputText))
+        {
+            // 显示输入错误提示
+            ShowError("请输入购买想法");
+            return;
+        }
+
+        // 解析用户输入的购买想法
+        var parsed = ParserService.Parse(inputText);
+        // 检查解析是否成功
+        if (!parsed.Success)
+        {
+            // 显示解析错误信息
+            ShowError(parsed.ErrorMessage);
+            return;
+        }
+
+        // 设置加载状态
+        isLoading = true;
+        // 清除之前的错误状态
+        hasError = false;
+        // 清除之前的错误消息
+        errorMessage = "";
+        // 清除之前的分析结果
+        analysisResult = null;
+
+        try
+        {
+            // 调用需求分析服务进行AI分析
+            analysisResult = await Service.AnalyzeAsync(parsed.Product, parsed.Reason);
+        }
+        catch (Exception ex)
+        {
+            // 记录分析失败日志
+            Logger.LogError(ex, "分析失败");
+            // 显示分析失败错误信息
+            ShowError($"分析失败: {ex.Message}");
+        }
+        finally
+        {
+            // 无论成功失败都结束加载状态
+            isLoading = false;
+        }
+    }
+
+    // 加入冷静清单方法 - 将低理性度商品加入等待列表
+    private async Task AddToWaitingList()
+    {
+        // 如果分析结果为空则直接返回
+        if (analysisResult == null) return;
+
+        try
+        {
+            // 调用冷静清单服务添加商品
+            await ListService.AddAsync(analysisResult.Product, analysisResult.Reason);
+            // 刷新待处理数量
+            await RefreshPendingCountAsync();
+            // 记录添加成功日志
+            Logger.LogInformation("商品 '{Product}' 已加入冷静清单", analysisResult.Product);
+
+            // 清空输入框
+            inputText = "";
+            // 清空分析结果显示
+            analysisResult = null;
+        }
+        catch (Exception ex)
+        {
+            // 记录添加失败日志
+            Logger.LogError(ex, "加入冷静清单失败");
+            // 显示添加失败错误信息
+            ShowError($"加入冷静清单失败: {ex.Message}");
+        }
+    }
+
+    // 显示错误信息的辅助方法
+    private void ShowError(string message)
+    {
+        // 设置错误状态为true
+        hasError = true;
+        // 存储错误消息文本
+        errorMessage = message;
+        // 清空分析结果
+        analysisResult = null;
+    }
+}
