@@ -20,7 +20,7 @@ public class Program // 程序入口类
 
         var kernelBuilder = Kernel.CreateBuilder(); // 创建 Semantic Kernel 构建器
         kernelBuilder.AddOpenAIChatCompletion( // 注册 OpenAI 风格的聊天完成服务
-            modelId: "qwen3.8-27b", // 指定模型 ID 为阿里云千问 Plus
+            modelId: "qwen3.7-flash-2026-07-15", // 指定模型 ID 为阿里云千问 Plus
             apiKey: apiKey, // 使用从环境变量获取的 API 密钥
             orgId: null, // 不需要组织 ID
             endpoint: new Uri("https://dashscope.aliyuncs.com/compatible-mode/v1") // 指定 DashScope 兼容端点
